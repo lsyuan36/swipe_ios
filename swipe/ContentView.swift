@@ -779,6 +779,12 @@ struct ContentView: View {
             self.continuousSaveTimer?.invalidate()
             self.continuousSaveTimer = nil
             
+            // 刷新视图以显示当前照片
+            self.cardKey = UUID()
+            
+            // 保存当前进度
+            self.dataManager.saveProgressOnly(currentIndex: self.currentPhotoIndex)
+            
             // 延迟重置状态，让用户看到最终数字
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.isLongPressing = false
@@ -815,13 +821,39 @@ struct ContentView: View {
         
         continuousSaveCount += 1
         
-        // 直接调用保留方法，避免通过UI触发
-        keepCurrentPhoto()
+        // 轻量级保存：只更新状态，不重新创建视图
+        keepCurrentPhotoLightweight()
         
         // 轻微的触觉反馈
         #if os(iOS)
         let selectionFeedback = UISelectionFeedbackGenerator()
         selectionFeedback.selectionChanged()
         #endif
+    }
+    
+    // 轻量级保留照片（连续保存专用）
+    private func keepCurrentPhotoLightweight() {
+        guard currentPhotoIndex < allPhotos.count else { return }
+        
+        // 标记为已保留
+        allPhotos[currentPhotoIndex].status = .kept
+        allPhotos[currentPhotoIndex].processedDate = Date()
+        
+        // 异步保存，避免阻塞UI
+        DispatchQueue.global(qos: .utility).async {
+            self.dataManager.updatePhotoStatus(self.allPhotos[self.currentPhotoIndex])
+        }
+        
+        // 移动到下一张，但不重新创建视图
+        currentPhotoIndex += 1
+        
+        // 异步更新预加载，不阻塞主线程
+        DispatchQueue.global(qos: .background).async {
+            DispatchQueue.main.async {
+                self.updatePreloadCache()
+            }
+        }
+        
+        // 不更新cardKey，避免重新创建PhotoCardView
     }
 }

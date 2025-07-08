@@ -7,10 +7,16 @@
 
 import SwiftUI
 import Photos
+import Foundation
 
 #if os(iOS)
 import UIKit
 #endif
+
+// 滑动方向枚举
+enum SwipeDirection {
+    case left, right
+}
 
 // Note: PhotoItem and PhotoCacheManager are defined in other files in the same target
 
@@ -36,6 +42,8 @@ struct PhotoCardView: View {
     @State private var hasTriggeredHaptic = false // 追蹤是否已觸發觸覺反饋
     @State private var isFavorite = false // 追蹤照片在iOS Photos中的喜好狀態
     @State private var isTogglingFavorite = false // 追蹤是否正在切換喜好狀態
+    @State private var longPressTimer: Timer? // 长按计时器
+    @State private var pressStartTime: Date? // 按下开始时间
     
     var body: some View {
         GeometryReader { geometry in
@@ -190,10 +198,32 @@ struct PhotoCardView: View {
         .scaleEffect(isAnimatingOut ? 0.6 : 1.0)
         .opacity(isAnimatingOut ? 0.0 : 1.0)
         .gesture(
-            DragGesture(minimumDistance: 10) // 添加最小距离，避免与长按冲突
+            DragGesture(minimumDistance: 0) // 设为0，这样可以捕获所有触摸
                 .onChanged { value in
-                    if !isAnimatingOut && !isLongPressing { // 长按时禁用拖拽
-                        // 極簡化更新，避免動畫衝突
+                    if isAnimatingOut { return }
+                    
+                    let dragDistance = sqrt(value.translation.width * value.translation.width + value.translation.height * value.translation.height)
+                    
+                    // 如果是第一次触摸
+                    if pressStartTime == nil {
+                        pressStartTime = Date()
+                        
+                        // 启动长按计时器
+                        longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { _ in
+                            // 长按触发：距离不能太大
+                            if dragDistance < 30 && !self.isLongPressing && !self.isAnimatingOut {
+                                self.triggerLongPress()
+                            }
+                        }
+                    }
+                    
+                    // 如果移动距离太大，取消长按
+                    if dragDistance > 30 {
+                        cancelLongPress()
+                    }
+                    
+                    // 正常拖拽处理（只有在非长按状态下）
+                    if !isLongPressing && dragDistance > 10 {
                         offset = value.translation
                         rotation = Double(value.translation.width / 12.0)
                         
@@ -209,38 +239,29 @@ struct PhotoCardView: View {
                     }
                 }
                 .onEnded { value in
-                    if isAnimatingOut || isLongPressing { return } // 长按时禁用拖拽结束
+                    if isAnimatingOut { return }
                     
-                    let swipeThreshold: CGFloat = 80 // 降低滑動閾值，更容易触发
+                    // 清理长按相关状态
+                    let wasLongPressing = isLongPressing
+                    cleanupGestureState()
+                    
+                    // 如果是长按结束
+                    if wasLongPressing {
+                        onLongPressEnd()
+                        return
+                    }
+                    
+                    // 正常滑动处理
+                    let swipeThreshold: CGFloat = 80
                     
                     if value.translation.width > swipeThreshold {
-                        // 向右滑動 - 保留（往右fade out）
-                        fadeDirection = 1
-                        isAnimatingOut = true
-                        // 極簡化動畫，避免AnimatablePair錯誤
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            offset = CGSize(width: 800, height: 0)
-                            rotation = 25
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            onSwipeRight()
-                            resetCard()
-                        }
+                        // 向右滑動 - 保留
+                        performSwipeAnimation(direction: .right)
                     } else if value.translation.width < -swipeThreshold {
-                        // 向左滑動 - 刪除（往左fade out）
-                        fadeDirection = -1
-                        isAnimatingOut = true
-                        // 極簡化動畫，避免AnimatablePair錯誤
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            offset = CGSize(width: -800, height: 0)
-                            rotation = -25
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            onSwipeLeft()
-                            resetCard()
-                        }
+                        // 向左滑動 - 刪除
+                        performSwipeAnimation(direction: .left)
                     } else {
-                        // 回到原位 - 簡化彈回動畫
+                        // 回到原位
                         withAnimation(.easeOut(duration: 0.2)) {
                             offset = .zero
                             rotation = 0
@@ -248,21 +269,6 @@ struct PhotoCardView: View {
                     }
                 }
         )
-        .onLongPressGesture(minimumDuration: 0.6, maximumDistance: 50) { // 减少长按时间，添加最大距离限制
-            // 长按开始
-            if !isAnimatingOut && !isLongPressing {
-                DispatchQueue.main.async {
-                    onLongPressStart()
-                }
-            }
-        } onPressingChanged: { pressing in
-            // 长按状态变化
-            if !pressing && isLongPressing {
-                DispatchQueue.main.async {
-                    onLongPressEnd()
-                }
-            }
-        }
         .onAppear {
             loadImage()
             checkFavoriteStatus()
@@ -345,6 +351,9 @@ struct PhotoCardView: View {
         fadeDirection = 0
         hasTriggeredHaptic = false // 重置觸覺反饋狀態
         
+        // 清理手势状态
+        cleanupGestureState()
+        
         // 如果正在长按，通知外部停止
         if isLongPressing {
             onLongPressEnd()
@@ -388,6 +397,59 @@ struct PhotoCardView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    private func triggerLongPress() {
+        // 触发长按
+        onLongPressStart()
+        
+        // 触觉反馈
+        #if os(iOS)
+        let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+        impactFeedback.impactOccurred()
+        #endif
+    }
+    
+    private func cancelLongPress() {
+        // 取消长按计时器
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+    }
+    
+    private func cleanupGestureState() {
+        // 清理手势状态
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        pressStartTime = nil
+        hasTriggeredHaptic = false
+    }
+    
+    private func performSwipeAnimation(direction: SwipeDirection) {
+        // 执行滑动动画
+        isAnimatingOut = true
+        
+        switch direction {
+        case .right:
+            fadeDirection = 1
+            withAnimation(.easeOut(duration: 0.25)) {
+                offset = CGSize(width: 800, height: 0)
+                rotation = 25
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                onSwipeRight()
+                resetCard()
+            }
+        case .left:
+            fadeDirection = -1
+            withAnimation(.easeOut(duration: 0.25)) {
+                offset = CGSize(width: -800, height: 0)
+                rotation = -25
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                onSwipeLeft()
+                resetCard()
             }
         }
     }
