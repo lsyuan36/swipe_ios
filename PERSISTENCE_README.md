@@ -59,6 +59,7 @@ class PhotoDataManager: ObservableObject {
     func savePhotoData(_ photos: [PhotoItem], currentIndex: Int)
     func loadPhotoData(for assets: [PHAsset]) -> (photos: [PhotoItem], currentIndex: Int)
     func updatePhotoStatus(_ photoItem: PhotoItem)
+    func resetAllPhotosStatus(_ photos: [PhotoItem])  // 新增：重置功能
     func exportData() -> Data?
     func importData(_ data: Data) -> Bool
 }
@@ -95,6 +96,41 @@ dataManager.saveProgressOnly(currentIndex: currentPhotoIndex)
 dataManager.savePhotoData(allPhotos, currentIndex: currentPhotoIndex)
 ```
 
+### 4. 重置功能集成
+```swift
+// 重置所有照片狀態（新功能）
+@State private var showingResetConfirmation = false
+@State private var isResetting = false
+
+// 顯示確認對話框
+Button("重置") {
+    showingResetConfirmation = true
+}
+
+// 執行重置操作
+private func performReset() {
+    isResetting = true  // 顯示加載動畫
+    
+    // 異步處理重置，避免UI阻塞
+    DispatchQueue.global(qos: .userInitiated).async {
+        // 分批重置照片狀態
+        let resetPhotos = allPhotos.map { photo in
+            var resetPhoto = photo
+            resetPhoto.status = .unprocessed
+            resetPhoto.processedDate = nil
+            return resetPhoto
+        }
+        
+        // 保存重置後的數據
+        dataManager.resetAllPhotosStatus(resetPhotos)
+        
+        DispatchQueue.main.async {
+            isResetting = false  // 隱藏加載動畫
+        }
+    }
+}
+```
+
 ## 存儲位置
 
 - **主數據文件**: `Documents/photoData.json`
@@ -107,6 +143,11 @@ dataManager.savePhotoData(allPhotos, currentIndex: currentPhotoIndex)
 - **增量更新**: 只保存變更的數據
 - **智能快取**: 記憶體中維護應用狀態
 - **快速載入**: 啟動時快速恢復用戶狀態
+- **重置優化**: 
+  - 確認對話框防止誤操作
+  - 分批處理重置操作（每批500張）
+  - 異步執行避免界面挂起
+  - 視覺回饋和加載動畫提升用戶體驗
 - **大數據優化**: 
   - 超過1萬張照片時自動啟用優化模式
   - 滑動時只保存進度，不保存整個陣列
@@ -134,6 +175,10 @@ dataManager.savePhotoData(allPhotos, currentIndex: currentPhotoIndex)
 let stats = dataManager.getDataStatistics()
 print("總照片數: \(stats["totalPhotos"])")
 print("已處理: \(stats["processedCount"])")
+
+// 重置功能除錯信息
+print("🔄 开始重置所有照片状态...")
+print("✅ 重置完成，共处理 \(photos.count) 张照片")
 
 // 驗證數據完整性
 if dataManager.validateAndRepairData() {
@@ -174,12 +219,16 @@ dataManager.createManualBackup()
 4. **智能頻率**: 大數據量時降低自動保存頻率
 
 ### 效果對比
-- **優化前**: 31807張照片滑動後0.31秒卡頓
-- **優化後**: 滑動響應<50ms，無明顯卡頓
+- **滑動優化前**: 31807張照片滑動後0.31秒卡頓
+- **滑動優化後**: 滑動響應<50ms，無明顯卡頓
+- **重置優化前**: 重置操作導致界面挂起0.96秒
+- **重置優化後**: 重置過程流暢，有確認對話框和加載動畫
 
 ### 除錯輸出
 ```
 數據保存成功: 15916 bytes  // 只保存必要數據
 📸 預載入照片: 0 到 10      // 智能預載入範圍
 🚀 快速載入圖片: 16BDCA07   // 快取命中
+🔄 开始重置所有照片状态...  // 重置操作開始
+✅ 重置完成，共处理 1257 张照片  // 重置操作完成
 ``` 

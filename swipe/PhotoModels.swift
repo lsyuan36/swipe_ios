@@ -306,6 +306,36 @@ class PhotoDataManager: ObservableObject {
         }
     }
     
+    /// 重置所有照片状态（专用于重置功能）
+    func resetAllPhotosStatus(_ photos: [PhotoItem]) {
+        print("🔄 开始重置 \(photos.count) 张照片的状态...")
+        
+        // 重置照片状态，但保持asset引用不变
+        let resetPhotos = photos.map { photo in
+            var resetPhoto = photo
+            resetPhoto.status = .unprocessed
+            resetPhoto.processedDate = nil
+            return resetPhoto
+        }
+        
+        // 更新数据状态
+        DispatchQueue.main.async {
+            // 清空现有数据
+            self.appState.photoData.removeAll()
+            
+            // 重置索引
+            self.appState.currentPhotoIndex = 0
+            
+            // 更新保存时间
+            self.appState.lastSavedDate = Date()
+        }
+        
+        // 保存重置后的状态
+        savePhotoData(resetPhotos, currentIndex: 0)
+        
+        print("✅ 重置完成，所有照片状态已清空")
+    }
+    
     /// 获取统计信息
     func getStatistics() -> [PhotoStatus: Int] {
         var stats: [PhotoStatus: Int] = [:]
@@ -469,10 +499,7 @@ class PhotoDataManager: ObservableObject {
     }
     
     private func restorePhotoItems(from persistentData: [PersistentPhotoData], assets: [PHAsset]) -> [PhotoItem] {
-        // 创建 asset 字典以便快速查找
-        let assetDict = Dictionary(uniqueKeysWithValues: assets.map { ($0.localIdentifier, $0) })
-        
-        // 创建 persistent data 字典
+        // 创建 persistent data 字典以便快速查找
         let persistentDataDict = Dictionary(uniqueKeysWithValues: persistentData.map { ($0.id, $0) })
         
         // 恢复 PhotoItem 数组，保持原有顺序

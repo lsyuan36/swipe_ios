@@ -31,6 +31,10 @@ struct ContentView: View {
     @State private var continuousSaveTimer: Timer?
     @State private var continuousSaveCount = 0
     
+    // 重置相关状态
+    @State private var showingResetConfirmation = false
+    @State private var isResetting = false
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -96,6 +100,18 @@ struct ContentView: View {
                             
                             // 現代化按鈕組
                             HStack(spacing: 12) {
+                                // 重置按鈕 - 讓用戶可以從頭開始整理
+                                ModernNavButton(
+                                    icon: "arrow.clockwise",
+                                    color: .orange,
+                                    badgeCount: 0,
+                                    isActive: isResetting,
+                                    action: {
+                                        // 显示确认对话框，而不是直接重置
+                                        showingResetConfirmation = true
+                                    }
+                                )
+                                
                                 // 垃圾桶按鈕 - 重新設計
                                 ModernNavButton(
                                     icon: "trash",
@@ -143,7 +159,7 @@ struct ContentView: View {
                     // 美化的統計面板
                     if !allPhotos.isEmpty {
                         VStack(spacing: 12) {
-                            // 進度指示器
+                            // 進度指示器 - 只顯示未處理的照片數量
                             VStack(spacing: 8) {
                                 HStack {
                                     Text("整理進度")
@@ -153,13 +169,13 @@ struct ContentView: View {
                                     
                                     Spacer()
                                     
-                                    Text("\(currentPhotoIndex + 1) / \(allPhotos.count)")
+                                    Text("還剩 \(unprocessedPhotosCount) 張")
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.primary)
                                 }
                                 
-                                // 進度條
+                                // 進度條 - 基於已處理照片的比例
                                 GeometryReader { geometry in
                                     ZStack(alignment: .leading) {
                                         Rectangle()
@@ -176,38 +192,14 @@ struct ContentView: View {
                                                 )
                                             )
                                             .frame(
-                                                width: geometry.size.width * min(1.0, Double(currentPhotoIndex + 1) / Double(allPhotos.count)),
+                                                width: geometry.size.width * min(1.0, Double(processedPhotosCount) / Double(allPhotos.count)),
                                                 height: 6
                                             )
                                             .cornerRadius(3)
-                                            .animation(.easeInOut(duration: 0.3), value: currentPhotoIndex)
+                                            .animation(.easeInOut(duration: 0.3), value: processedPhotosCount)
                                     }
                                 }
                                 .frame(height: 6)
-                            }
-                            
-                            // 統計卡片組
-                            HStack(spacing: 12) {
-                                ModernStatisticCard(
-                                    number: processedPhotosCount,
-                                    label: "已處理",
-                                    color: .blue,
-                                    icon: "checkmark.circle.fill"
-                                )
-                                
-                                ModernStatisticCard(
-                                    number: keptPhotosCount,
-                                    label: "已保留",
-                                    color: .green,
-                                    icon: "heart.fill"
-                                )
-                                
-                                ModernStatisticCard(
-                                    number: deletedPhotosCount,
-                                    label: "已刪除",
-                                    color: .red,
-                                    icon: "trash.fill"
-                                )
                             }
                         }
                         .padding(.all, 20)
@@ -415,12 +407,12 @@ struct ContentView: View {
                                 }
                                 
                                 Button("重新開始") {
-                                    withAnimation(.easeInOut(duration: 0.5)) {
-                                        resetAllPhotos()
-                                    }
+                                    // 显示确认对话框，而不是直接重置
+                                    showingResetConfirmation = true
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(.gray)
+                                .disabled(isResetting)
                             }
                         }
                         .padding(.all, 32)
@@ -480,13 +472,15 @@ struct ContentView: View {
             .disabled(currentPhotoIndex == 0) // 第一張照片時禁用
             .opacity(currentPhotoIndex == 0 ? 0.5 : 1.0)
             
-            // 保留按鈕
+            // 保留按鈕 - 支援長按連續保留
             ModernActionButton(
                 icon: "heart.fill",
                 text: "保留",
                 color: .green,
                 isPrimary: true,
-                action: keepCurrentPhoto
+                action: keepCurrentPhoto,
+                onLongPressStart: startContinuousSave,
+                onLongPressEnd: stopContinuousSave
             )
         }
         .padding(.horizontal, 30)
@@ -544,6 +538,44 @@ struct ContentView: View {
                 }
             )
         }
+        .alert("重置所有照片", isPresented: $showingResetConfirmation) {
+            Button("取消", role: .cancel) { }
+            Button("重置", role: .destructive) {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    performReset()
+                }
+            }
+        } message: {
+            Text("這將清空所有照片的處理狀態，讓您從頭開始整理。此操作無法復原。")
+        }
+        .overlay(
+            // 重置过程中的加载动画
+            Group {
+                if isResetting {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                        
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .tint(.blue)
+                            
+                            Text("正在重置照片狀態...")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        .padding(40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(.ultraThinMaterial)
+                                .shadow(radius: 10)
+                        )
+                    }
+                    .transition(.opacity)
+                }
+            }
+        )
     }
     
     // 計算統計數據
@@ -557,6 +589,10 @@ struct ContentView: View {
     
     private var deletedPhotosCount: Int {
         allPhotos.filter { $0.status == .deleted }.count
+    }
+    
+    private var unprocessedPhotosCount: Int {
+        allPhotos.filter { $0.status == .unprocessed }.count
     }
     
     // 檢查照片權限
@@ -733,14 +769,107 @@ struct ContentView: View {
         print("📸 返回上一張照片，狀態已清空，可重新處理")
     }
     
-    // 重新開始整理
-    private func resetAllPhotos() {
-        for index in allPhotos.indices {
-            allPhotos[index].status = .unprocessed
-            allPhotos[index].processedDate = nil
+    // 执行重置操作（带加载状态管理）
+    private func performReset() {
+        // 设置加载状态
+        isResetting = true
+        
+        // 立即停止任何正在进行的长按操作
+        if isLongPressing {
+            stopContinuousSave()
         }
-        currentPhotoIndex = 0
-        cardKey = UUID() // 更新key
+        
+        // 提供触觉反馈，让用户知道操作已开始
+        #if os(iOS)
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        #endif
+        
+        // 立即清理所有缓存，释放内存
+        cacheManager.clearAllCache()
+        
+        print("🔄 开始重置所有照片状态...")
+        
+        // 使用异步处理，避免阻塞主线程，无论数据量大小
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.resetAllPhotosAsync()
+        }
+    }
+    
+    // 异步重置操作（优化版本，避免主线程阻塞）
+    private func resetAllPhotosAsync() {
+        // 先在主线程重置UI状态
+        DispatchQueue.main.async {
+            self.currentPhotoIndex = 0
+            self.cardKey = UUID()
+        }
+        
+        // 创建重置后的照片数组（在后台线程处理）
+        let resetPhotos = self.allPhotos.map { photo in
+            var resetPhoto = photo
+            resetPhoto.status = .unprocessed
+            resetPhoto.processedDate = nil
+            return resetPhoto
+        }
+        
+        // 分批更新主线程中的照片数组，避免一次性大量更新
+        let batchSize = 500
+        let totalBatches = (resetPhotos.count + batchSize - 1) / batchSize
+        
+        for batchIndex in 0..<totalBatches {
+            let startIndex = batchIndex * batchSize
+            let endIndex = min(startIndex + batchSize, resetPhotos.count)
+            let batch = Array(resetPhotos[startIndex..<endIndex])
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(batchIndex) * 0.02) {
+                // 更新对应批次的照片
+                for (localIndex, photo) in batch.enumerated() {
+                    let globalIndex = startIndex + localIndex
+                    if globalIndex < self.allPhotos.count {
+                        self.allPhotos[globalIndex] = photo
+                    }
+                }
+                
+                // 最后一批时完成重置
+                if batchIndex == totalBatches - 1 {
+                    self.completeReset(resetPhotos)
+                }
+            }
+        }
+    }
+    
+    // 完成重置操作
+    private func completeReset(_ resetPhotos: [PhotoItem]) {
+        // 使用专门的重置方法保存数据
+        DispatchQueue.global(qos: .utility).async {
+            self.dataManager.resetAllPhotosStatus(resetPhotos)
+            
+            DispatchQueue.main.async {
+                // 重新开始预加载缓存
+                self.updatePreloadCache()
+                
+                // 提供完成反馈
+                self.provideFeedbackForReset()
+                
+                // 重置完成，隐藏加载动画
+                withAnimation(.easeOut) {
+                    self.isResetting = false
+                }
+                
+                print("✅ 重置完成，共处理 \(resetPhotos.count) 张照片")
+            }
+        }
+    }
+    
+    // 为重置操作提供用户反馈
+    private func provideFeedbackForReset() {
+        #if os(iOS)
+        // 成功完成的触觉反馈
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let successFeedback = UINotificationFeedbackGenerator()
+            successFeedback.notificationOccurred(.success)
+        }
+        #endif
     }
     
     // 开始长按连续保存
@@ -844,8 +973,11 @@ struct ContentView: View {
             self.dataManager.updatePhotoStatus(self.allPhotos[self.currentPhotoIndex])
         }
         
-        // 移动到下一张，但不重新创建视图
+        // 移动到下一张照片
         currentPhotoIndex += 1
+        
+        // 更新cardKey以显示新照片，让用户看到连续保留的照片变化
+        cardKey = UUID()
         
         // 异步更新预加载，不阻塞主线程
         DispatchQueue.global(qos: .background).async {
@@ -853,7 +985,5 @@ struct ContentView: View {
                 self.updatePreloadCache()
             }
         }
-        
-        // 不更新cardKey，避免重新创建PhotoCardView
     }
 }

@@ -27,11 +27,13 @@ struct ModernStatisticCard: View {
                     .foregroundColor(color)
             }
             
-            // 標籤
-            Text(label)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.secondary)
+            // 標籤（只在有文字時顯示）
+            if !label.isEmpty {
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
