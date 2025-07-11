@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var showingOverview = false // 控制總覽畫面顯示
     @State private var showingBrowser = false // 控制照片瀏覽器顯示
     @State private var showingTrashBin = false // 控制垃圾桶畫面顯示
+    @State private var showingSettings = false // 控制設置畫面顯示
     @State private var cardKey = UUID() // 強制更新卡片的key
     
     @StateObject private var cacheManager = PhotoCacheManager.shared
@@ -32,7 +33,6 @@ struct ContentView: View {
     @State private var continuousSaveCount = 0
     
     // 重置相关状态
-    @State private var showingResetConfirmation = false
     @State private var isResetting = false
     
     var body: some View {
@@ -81,7 +81,7 @@ struct ContentView: View {
                             // 品牌標題區域
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Swipe")
-                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .font(.jetBrainsMonoBold(32))
                                     .foregroundStyle(
                                         LinearGradient(
                                             colors: [Color.blue, Color.purple],
@@ -91,7 +91,7 @@ struct ContentView: View {
                                     )
                                 
                                 Text("照片整理助手")
-                                    .font(.caption)
+                                    .font(.jetBrainsMono(12))
                                     .foregroundColor(.secondary)
                                     .opacity(0.8)
                             }
@@ -100,15 +100,16 @@ struct ContentView: View {
                             
                             // 現代化按鈕組
                             HStack(spacing: 12) {
-                                // 重置按鈕 - 讓用戶可以從頭開始整理
+                                // 設置按鈕 - 讓用戶訪問設置和重置功能
                                 ModernNavButton(
-                                    icon: "arrow.clockwise",
-                                    color: .orange,
+                                    icon: "gearshape.fill",
+                                    color: .gray,
                                     badgeCount: 0,
-                                    isActive: isResetting,
+                                    isActive: showingSettings,
                                     action: {
-                                        // 显示确认对话框，而不是直接重置
-                                        showingResetConfirmation = true
+                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                            showingSettings = true
+                                        }
                                     }
                                 )
                                 
@@ -170,7 +171,7 @@ struct ContentView: View {
                                     Spacer()
                                     
                                     Text("還剩 \(unprocessedPhotosCount) 張")
-                                        .font(.subheadline)
+                                        .font(.jetBrainsMonoMedium(15))
                                         .fontWeight(.semibold)
                                         .foregroundColor(.primary)
                                 }
@@ -406,13 +407,13 @@ struct ContentView: View {
                                     .tint(.blue)
                                 }
                                 
-                                Button("重新開始") {
-                                    // 显示确认对话框，而不是直接重置
-                                    showingResetConfirmation = true
+                                Button("設置") {
+                                    withAnimation(.spring()) {
+                                        showingSettings = true
+                                    }
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(.gray)
-                                .disabled(isResetting)
                             }
                         }
                         .padding(.all, 32)
@@ -424,33 +425,67 @@ struct ContentView: View {
                         .padding(.horizontal, 24)
                         
                     } else {
-                        // 顯示當前照片
-                        PhotoCardView(
-                            photoItem: allPhotos[currentPhotoIndex],
-                            cacheManager: cacheManager,
-                            onSwipeLeft: {
-                                deleteCurrentPhoto()
-                            },
-                            onSwipeRight: {
-                                keepCurrentPhoto()
-                            },
-                            isLongPressing: $isLongPressing,
-                            continuousSaveCount: $continuousSaveCount,
-                            onLongPressStart: startContinuousSave,
-                            onLongPressEnd: stopContinuousSave
-                        )
-                        .id(cardKey) // 使用id強制重新創建view
-                        .padding(.horizontal, 20)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.9)),
-                            removal: .opacity.combined(with: .scale(scale: 0.9))
-                        ))
+                        // 顯示當前照片 - 添加安全檢查
+                        if !allPhotos.isEmpty && currentPhotoIndex >= 0 && currentPhotoIndex < allPhotos.count {
+                            PhotoCardView(
+                                photoItem: allPhotos[currentPhotoIndex],
+                                cacheManager: cacheManager,
+                                onSwipeLeft: {
+                                    deleteCurrentPhoto()
+                                },
+                                onSwipeRight: {
+                                    keepCurrentPhoto()
+                                },
+                                isLongPressing: $isLongPressing,
+                                continuousSaveCount: $continuousSaveCount,
+                                onLongPressStart: startContinuousSave,
+                                onLongPressEnd: stopContinuousSave
+                            )
+                            .id(cardKey) // 使用id強制重新創建view
+                            .padding(.horizontal, 20)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.9)),
+                                removal: .opacity.combined(with: .scale(scale: 0.9))
+                            ))
+                        } else {
+                            // 索引異常時的顯示
+                            VStack(spacing: 20) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.orange)
+                                
+                                VStack(spacing: 8) {
+                                    Text("索引異常")
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("當前索引: \(currentPhotoIndex)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text("照片總數: \(allPhotos.count)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Button("重置到第一張") {
+                                        if !allPhotos.isEmpty {
+                                            currentPhotoIndex = 0
+                                            cardKey = UUID()
+                                            updatePreloadCache()
+                                        }
+                                    }
+                                    .foregroundColor(.blue)
+                                    .padding(.top, 10)
+                                }
+                            }
+                            .padding(40)
+                        }
                     }
                     
                     Spacer()
                     
                         // 美化的底部操作按鈕
-    if !allPhotos.isEmpty && currentPhotoIndex < allPhotos.count {
+    if !allPhotos.isEmpty {
         HStack(spacing: 20) {       
             // 刪除按鈕
             ModernActionButton(
@@ -458,19 +493,25 @@ struct ContentView: View {
                 text: "刪除",
                 color: .red,
                 isPrimary: false,
-                action: deleteCurrentPhoto
+                action: {
+                    print("🗑️ 刪除按鈕被點擊，當前索引: \(currentPhotoIndex)")
+                    deleteCurrentPhoto()
+                }
             )
 
-                        // 上一張按鈕
+            // 上一張按鈕 - 改善邏輯
             ModernActionButton(
                 icon: "chevron.left",
                 text: "上一張",
                 color: .blue,
                 isPrimary: false,
-                action: moveToPreviousPhoto
+                action: {
+                    print("⬅️ 上一張按鈕被點擊，當前索引: \(currentPhotoIndex)")
+                    moveToPreviousPhoto()
+                }
             )
-            .disabled(currentPhotoIndex == 0) // 第一張照片時禁用
-            .opacity(currentPhotoIndex == 0 ? 0.5 : 1.0)
+            .disabled(currentPhotoIndex <= 0) // 改善禁用條件
+            .opacity(currentPhotoIndex <= 0 ? 0.5 : 1.0)
             
             // 保留按鈕 - 支援長按連續保留
             ModernActionButton(
@@ -478,13 +519,22 @@ struct ContentView: View {
                 text: "保留",
                 color: .green,
                 isPrimary: true,
-                action: keepCurrentPhoto,
+                action: {
+                    print("💚 保留按鈕被點擊，當前索引: \(currentPhotoIndex)")
+                    keepCurrentPhoto()
+                },
                 onLongPressStart: startContinuousSave,
                 onLongPressEnd: stopContinuousSave
             )
         }
         .padding(.horizontal, 30)
         .padding(.bottom, 10)
+    } else {
+        // 調試信息：當沒有照片時顯示
+        Text("📸 沒有照片可顯示")
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding()
     }
                 }
             }
@@ -494,6 +544,46 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .onAppear {
+            #if os(iOS)
+            // 锁定为竖屏模式 - 使用新的iOS API避免警告
+            if #available(iOS 16.0, *) {
+                // iOS 16+ 使用UIWindowScene.requestGeometryUpdate
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                    let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
+                    windowScene.requestGeometryUpdate(geometryPreferences) { error in
+                        print("设置屏幕方向失败: \(error.localizedDescription)")
+                    }
+                }
+            } else {
+                // iOS 15及以下版本使用旧方法
+                UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+            }
+            #endif
+            
+            // 检查 JetBrains Mono 字体是否可用
+            #if os(iOS)
+            // 显示详细的字体状态报告
+            print(FontChecker.getFontStatusReport())
+            
+            // 验证项目字体配置
+            let fontValidation = FontChecker.validateProjectFonts()
+            if !fontValidation.missing.isEmpty {
+                print("⚠️ 项目中缺失的字体文件:")
+                for missing in fontValidation.missing {
+                    print("   ❌ \(missing)")
+                }
+            }
+            if !fontValidation.valid.isEmpty {
+                print("✅ 项目中可用的字体文件:")
+                for valid in fontValidation.valid {
+                    print("   ✅ \(valid)")
+                }
+            }
+            
+            // 显示配置指导
+            print(FontChecker.getConfigurationInstructions())
+            #endif
+            
             checkPhotoPermission()
         }
         .onDisappear {
@@ -538,16 +628,38 @@ struct ContentView: View {
                 }
             )
         }
-        .alert("重置所有照片", isPresented: $showingResetConfirmation) {
-            Button("取消", role: .cancel) { }
-            Button("重置", role: .destructive) {
-                withAnimation(.easeInOut(duration: 0.5)) {
-                    performReset()
-                }
-            }
-        } message: {
-            Text("這將清空所有照片的處理狀態，讓您從頭開始整理。此操作無法復原。")
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(
+                onDismiss: {
+                    withAnimation(.easeOut) {
+                        showingSettings = false
+                    }
+                },
+                onReset: {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        performReset()
+                    }
+                },
+                onExport: {
+                    return dataManager.exportData()
+                },
+                onImport: { data in
+                    let success = dataManager.importData(data)
+                    if success {
+                        // 導入成功後重新載入照片
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            checkPhotoPermission()
+                        }
+                    }
+                    return success
+                },
+                photosCount: allPhotos.count,
+                processedCount: processedPhotosCount,
+                keptCount: keptPhotosCount,
+                deletedCount: deletedPhotosCount
+            )
         }
+
         .overlay(
             // 重置过程中的加载动画
             Group {
@@ -695,7 +807,12 @@ struct ContentView: View {
     
     // 刪除當前照片（移至App內垃圾桶）
     private func deleteCurrentPhoto() {
-        guard currentPhotoIndex < allPhotos.count else { return }
+        guard !allPhotos.isEmpty, currentPhotoIndex >= 0, currentPhotoIndex < allPhotos.count else { 
+            print("❌ 刪除失敗：索引無效 currentPhotoIndex=\(currentPhotoIndex), allPhotos.count=\(allPhotos.count)")
+            return 
+        }
+        
+        print("🗑️ 開始刪除照片，索引: \(currentPhotoIndex)")
         
         // 標記為已刪除並更新UI（僅在App內標記，不實際刪除）
         allPhotos[currentPhotoIndex].status = .deleted
@@ -714,7 +831,12 @@ struct ContentView: View {
     
     // 保留當前照片
     private func keepCurrentPhoto() {
-        guard currentPhotoIndex < allPhotos.count else { return }
+        guard !allPhotos.isEmpty, currentPhotoIndex >= 0, currentPhotoIndex < allPhotos.count else { 
+            print("❌ 保留失敗：索引無效 currentPhotoIndex=\(currentPhotoIndex), allPhotos.count=\(allPhotos.count)")
+            return 
+        }
+        
+        print("💚 開始保留照片，索引: \(currentPhotoIndex)")
         
         // 標記為已保留
         allPhotos[currentPhotoIndex].status = .kept
@@ -731,7 +853,19 @@ struct ContentView: View {
     
     // 移動到下一張照片
     private func moveToNextPhoto() {
-        currentPhotoIndex += 1
+        guard !allPhotos.isEmpty else { 
+            print("❌ 無照片可移動")
+            return 
+        }
+        
+        // 確保不超出範圍
+        if currentPhotoIndex < allPhotos.count - 1 {
+            currentPhotoIndex += 1
+            print("➡️ 移動到下一張照片，新索引: \(currentPhotoIndex)")
+        } else {
+            print("📋 已到達最後一張照片，索引: \(currentPhotoIndex)")
+        }
+        
         cardKey = UUID() // 更新key以強制重新載入
         
         // 只保存进度，不保存整个照片数组（性能优化）
@@ -743,9 +877,17 @@ struct ContentView: View {
     
     // 移動到上一張照片
     private func moveToPreviousPhoto() {
-        guard currentPhotoIndex > 0 else { return }
+        guard !allPhotos.isEmpty, currentPhotoIndex > 0 else { 
+            print("❌ 無法返回上一張：currentPhotoIndex=\(currentPhotoIndex), allPhotos.count=\(allPhotos.count)")
+            return 
+        }
+        
+        print("⬅️ 開始返回上一張照片，當前索引: \(currentPhotoIndex)")
         
         currentPhotoIndex -= 1
+        
+        // 確保索引在有效範圍內
+        currentPhotoIndex = max(0, currentPhotoIndex)
         
         // 清空返回照片的處理狀態，讓用戶可以重新決定
         allPhotos[currentPhotoIndex].status = .unprocessed
@@ -766,7 +908,7 @@ struct ContentView: View {
         impactFeedback.impactOccurred()
         #endif
         
-        print("📸 返回上一張照片，狀態已清空，可重新處理")
+        print("📸 返回上一張照片成功，新索引: \(currentPhotoIndex)，狀態已清空")
     }
     
     // 执行重置操作（带加载状态管理）
@@ -796,105 +938,90 @@ struct ContentView: View {
         }
     }
     
-    // 异步重置操作（优化版本，避免主线程阻塞）
+    // 快速重置操作（简化优化版本）
     private func resetAllPhotosAsync() {
-        // 先在主线程重置UI状态
+        // 在后台线程快速重置所有照片状态
+        let startTime = Date()
+        
+        // 直接在内存中重置所有照片状态
+        for index in 0..<allPhotos.count {
+            allPhotos[index].status = .unprocessed
+            allPhotos[index].processedDate = nil
+        }
+        
+        // 立即更新UI状态
         DispatchQueue.main.async {
             self.currentPhotoIndex = 0
             self.cardKey = UUID()
-        }
-        
-        // 创建重置后的照片数组（在后台线程处理）
-        let resetPhotos = self.allPhotos.map { photo in
-            var resetPhoto = photo
-            resetPhoto.status = .unprocessed
-            resetPhoto.processedDate = nil
-            return resetPhoto
-        }
-        
-        // 分批更新主线程中的照片数组，避免一次性大量更新
-        let batchSize = 500
-        let totalBatches = (resetPhotos.count + batchSize - 1) / batchSize
-        
-        for batchIndex in 0..<totalBatches {
-            let startIndex = batchIndex * batchSize
-            let endIndex = min(startIndex + batchSize, resetPhotos.count)
-            let batch = Array(resetPhotos[startIndex..<endIndex])
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(batchIndex) * 0.02) {
-                // 更新对应批次的照片
-                for (localIndex, photo) in batch.enumerated() {
-                    let globalIndex = startIndex + localIndex
-                    if globalIndex < self.allPhotos.count {
-                        self.allPhotos[globalIndex] = photo
-                    }
-                }
-                
-                // 最后一批时完成重置
-                if batchIndex == totalBatches - 1 {
-                    self.completeReset(resetPhotos)
-                }
+            // 重新开始预加载缓存
+            self.updatePreloadCache()
+            
+            // 重置完成，隐藏加载动画
+            withAnimation(.easeOut) {
+                self.isResetting = false
             }
+            
+            let duration = Date().timeIntervalSince(startTime)
+            print("✅ 快速重置完成，共处理 \(self.allPhotos.count) 张照片，耗时 \(String(format: "%.2f", duration))秒")
+            
+            // 提供完成反馈
+            self.provideFeedbackForReset()
+        }
+        
+        // 异步保存到磁盘，不阻塞UI
+        DispatchQueue.global(qos: .utility).async {
+            self.dataManager.resetAllPhotosStatus(self.allPhotos)
         }
     }
     
-    // 完成重置操作
-    private func completeReset(_ resetPhotos: [PhotoItem]) {
-        // 使用专门的重置方法保存数据
-        DispatchQueue.global(qos: .utility).async {
-            self.dataManager.resetAllPhotosStatus(resetPhotos)
-            
-            DispatchQueue.main.async {
-                // 重新开始预加载缓存
-                self.updatePreloadCache()
-                
-                // 提供完成反馈
-                self.provideFeedbackForReset()
-                
-                // 重置完成，隐藏加载动画
-                withAnimation(.easeOut) {
-                    self.isResetting = false
-                }
-                
-                print("✅ 重置完成，共处理 \(resetPhotos.count) 张照片")
-            }
-        }
-    }
+
     
     // 为重置操作提供用户反馈
     private func provideFeedbackForReset() {
         #if os(iOS)
-        // 成功完成的触觉反馈
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let successFeedback = UINotificationFeedbackGenerator()
-            successFeedback.notificationOccurred(.success)
-        }
+        // 立即提供成功完成的触觉反馈
+        let successFeedback = UINotificationFeedbackGenerator()
+        successFeedback.notificationOccurred(.success)
         #endif
     }
     
     // 开始长按连续保存
     private func startContinuousSave() {
-        // 立即更新状态，避免阻塞手势
-        isLongPressing = true
-        continuousSaveCount = 0
+        print("🔥 开始长按连续保存 - 函数被调用")
         
-        // 触觉反馈
-        #if os(iOS)
-        let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
-        impactFeedback.impactOccurred()
-        #endif
-        
-        // 将耗时操作异步执行，避免阻塞手势
+        // 确保在主线程中更新状态
         DispatchQueue.main.async {
-            self.performFirstSave()
-            self.startContinuousTimer()
+            // 立即更新状态，让UI响应
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.isLongPressing = true
+                self.continuousSaveCount = 0
+            }
+            
+            print("🔥 长按状态已更新: isLongPressing = \(self.isLongPressing)")
+            
+            // 触觉反馈
+            #if os(iOS)
+            let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+            impactFeedback.impactOccurred()
+            #endif
+            
+            // 稍微延迟执行保存操作，让动画先开始
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.performFirstSave()
+                self.startContinuousTimer()
+            }
         }
-        
-        print("🔥 开始长按连续保存")
     }
     
     // 停止长按连续保存
     private func stopContinuousSave() {
+        print("🛑 停止长按连续保存 - 函数被调用，当前保存数: \(continuousSaveCount)")
+        
+        // 立即停止定时器和重置状态，无需结束动画
+        continuousSaveTimer?.invalidate()
+        continuousSaveTimer = nil
+        
         // 触觉反馈
         #if os(iOS)
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -903,23 +1030,20 @@ struct ContentView: View {
         
         print("🛑 停止长按连续保存，共保存了 \(continuousSaveCount) 张照片")
         
-        // 异步清理，避免阻塞手势
-        DispatchQueue.main.async {
-            self.continuousSaveTimer?.invalidate()
-            self.continuousSaveTimer = nil
-            
-            // 刷新视图以显示当前照片
-            self.cardKey = UUID()
-            
-            // 保存当前进度
+        // 立即重置状态，无延迟
+        isLongPressing = false
+        let savedCount = continuousSaveCount
+        continuousSaveCount = 0
+        
+        // 立即刷新视图，显示当前照片
+        cardKey = UUID()
+        
+        // 异步保存当前进度，不阻塞UI
+        DispatchQueue.global(qos: .utility).async {
             self.dataManager.saveProgressOnly(currentIndex: self.currentPhotoIndex)
-            
-            // 延迟重置状态，让用户看到最终数字
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.isLongPressing = false
-                self.continuousSaveCount = 0
-            }
         }
+        
+        print("🛑 长按状态已重置: isLongPressing = \(isLongPressing)，保存了 \(savedCount) 张照片")
     }
     
     // 启动连续保存定时器
@@ -976,8 +1100,10 @@ struct ContentView: View {
         // 移动到下一张照片
         currentPhotoIndex += 1
         
-        // 更新cardKey以显示新照片，让用户看到连续保留的照片变化
+        // 🔥 长按过程中也要更新cardKey，让用户看到照片切换
+        // 动画状态通过绑定变量 isLongPressing 和 continuousSaveCount 来维持
         cardKey = UUID()
+        print("🔄 长按进行中：更新cardKey显示新照片，动画状态通过绑定变量维持")
         
         // 异步更新预加载，不阻塞主线程
         DispatchQueue.global(qos: .background).async {

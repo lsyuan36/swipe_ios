@@ -81,15 +81,18 @@ struct ModernActionButton: View {
         .scaleEffect(isPressed ? 0.95 : 1.0)
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { value in
                     if !isPressed {
                         withAnimation(.easeInOut(duration: 0.1)) {
                             isPressed = true
                         }
                         
+                        print("🔘 按鈕被按下: \(text)")
+                        
                         // 如果支援長按，開始計時器
                         if onLongPressStart != nil {
-                            longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { _ in
+                            longPressTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+                                print("🔘 長按觸發: \(text)")
                                 // 觸覺反饋
                                 #if os(iOS)
                                 let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
@@ -101,7 +104,7 @@ struct ModernActionButton: View {
                         }
                     }
                 }
-                .onEnded { _ in
+                .onEnded { value in
                     withAnimation(.easeInOut(duration: 0.1)) {
                         isPressed = false
                     }
@@ -111,20 +114,44 @@ struct ModernActionButton: View {
                         timer.invalidate()
                         longPressTimer = nil
                         
+                        print("🔘 短按觸發: \(text)")
+                        
                         // 普通點擊
                         #if os(iOS)
                         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                         impactFeedback.impactOccurred()
                         #endif
                         
-                        action()
-                    } else {
+                        // 確保在主線程執行動作
+                        DispatchQueue.main.async {
+                            action()
+                        }
+                    } else if onLongPressStart != nil {
+                        // 只有支援長按功能的按鈕才處理長按結束
+                        print("🔘 長按結束: \(text)")
                         // 長按結束
                         onLongPressEnd?()
+                    } else {
+                        // 不支援長按的按鈕，計時器可能因為某種原因無效，仍執行普通點擊
+                        print("🔘 點擊觸發: \(text)")
+                        
+                        // 普通點擊
+                        #if os(iOS)
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
+                        #endif
+                        
+                        // 確保在主線程執行動作
+                        DispatchQueue.main.async {
+                            action()
+                        }
                     }
                 }
         )
         .buttonStyle(PlainButtonStyle())
+        .onAppear {
+            print("🔘 按鈕已載入: \(text)")
+        }
     }
 }
 

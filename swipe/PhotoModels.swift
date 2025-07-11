@@ -306,19 +306,12 @@ class PhotoDataManager: ObservableObject {
         }
     }
     
-    /// 重置所有照片状态（专用于重置功能）
+    /// 重置所有照片状态（快速版本）
     func resetAllPhotosStatus(_ photos: [PhotoItem]) {
-        print("🔄 开始重置 \(photos.count) 张照片的状态...")
+        let startTime = Date()
+        print("🔄 快速重置开始，共 \(photos.count) 张照片...")
         
-        // 重置照片状态，但保持asset引用不变
-        let resetPhotos = photos.map { photo in
-            var resetPhoto = photo
-            resetPhoto.status = .unprocessed
-            resetPhoto.processedDate = nil
-            return resetPhoto
-        }
-        
-        // 更新数据状态
+        // 立即清空所有数据状态，无需复杂处理
         DispatchQueue.main.async {
             // 清空现有数据
             self.appState.photoData.removeAll()
@@ -330,10 +323,11 @@ class PhotoDataManager: ObservableObject {
             self.appState.lastSavedDate = Date()
         }
         
-        // 保存重置后的状态
-        savePhotoData(resetPhotos, currentIndex: 0)
+        // 快速保存清空状态到文件
+        saveDataToFile()
         
-        print("✅ 重置完成，所有照片状态已清空")
+        let duration = Date().timeIntervalSince(startTime)
+        print("✅ 快速重置完成，所有照片状态已清空，耗时 \(String(format: "%.3f", duration))秒")
     }
     
     /// 获取统计信息
@@ -456,7 +450,7 @@ class PhotoDataManager: ObservableObject {
                 print("数据完整性检查失败，尝试从备份恢复")
                 return tryLoadFromBackup()
             }
-        } catch {
+        } catch {  
             print("加载数据失败: \(error)")
             return tryLoadFromBackup()
         }
